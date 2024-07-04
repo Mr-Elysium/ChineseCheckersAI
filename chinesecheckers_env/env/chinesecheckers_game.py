@@ -106,8 +106,7 @@ class ChineseCheckers:
         self._legal_moves = moves
 
     def get_legal_moves(self, player: int):
-        if self._legal_moves is None:
-            self.find_legal_moves(player)
+        self.find_legal_moves(player)
         return self._legal_moves
 
     def find_legal_moves_pin(self, pos: Position):
@@ -176,8 +175,7 @@ class ChineseCheckers:
             self._game_over = True
 
     def is_move_legal(self, move: Move, player: int):
-        if self._legal_moves is None:
-            self.find_legal_moves(player)
+        self.find_legal_moves(player)
         return move in self._legal_moves
 
     def _set_coordinate(self, pos: Position, value: int):
@@ -194,6 +192,9 @@ class ChineseCheckers:
                 return False
 
         return True
+
+    def is_game_over(self):
+        return self._game_over
 
     def render(self):
         return self._render_frame()
