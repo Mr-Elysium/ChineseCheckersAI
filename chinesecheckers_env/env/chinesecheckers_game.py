@@ -2,8 +2,6 @@ from PIL import Image
 import numpy as np
 import pygame
 from enum import IntEnum
-import matplotlib.pyplot as plt
-import time
 
 class Direction(IntEnum):
     Right = 0
