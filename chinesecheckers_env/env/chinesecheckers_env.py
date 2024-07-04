@@ -3,105 +3,66 @@ from copy import copy
 from chinesecheckers_env.env.chinesecheckers_utils import check_winner
 
 import numpy as np
-from gymnasium.spaces import Discrete, MultiDiscrete
-from pettingzoo import ParallelEnv
+from gymnasium.spaces import Discrete, MultiDiscrete, Dict
+from pettingzoo import AECEnv
+from pettingzoo.utils import agent_selector, wrappers
 
-BOARD_SIZE = 9
+NUM_PINS = 10
+BOARD_SIZE = np.floor(np.sqrt(NUM_PINS * 2))
 BOARD_HIST = 3
+MAX_MOVES = 1000
+NUM_PLAYERS = 2
 
-class ChineseCheckersEnv(ParallelEnv):
+class ChineseCheckersEnv(AECEnv):
     metadata = {
-        "name": "chinese_checkers_environment_v0",
+        "render_modes": ["human"],
+        "name": "chinese_checkers_environment",
     }
 
-    def __init__(self):
+    def __init__(self, render_mode: str = "human"):
+        self.agents = [f"players_{i}" for i in range(NUM_PLAYERS)]
+        self.possible_agents = self.agents[:]
+        self.move = 0
+        self.agent_name_mapping = dict(
+            zip(self.possible_agents, list(range(len(self.possible_agents))))
+        )
 
-        self.board = None
-        self.possible_players = ["player1", "player2"]
-        self.starting_board = np.zeros((BOARD_SIZE, BOARD_SIZE, BOARD_HIST), dtype='uint8')
-        self.starting_board[:, :, 0] = np.array([[0, 0, 0, 0, 0, 2, 2, 2, 2],
-                                       [0, 0, 0, 0, 0, 0, 2, 2, 2],
-                                       [0, 0, 0, 0, 0, 0, 0, 2, 2],
-                                       [0, 0, 0, 0, 0, 0, 0, 0, 2],
-                                       [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                                       [1, 0, 0, 0, 0, 0, 0, 0, 0],
-                                       [1, 1, 0, 0, 0, 0, 0, 0, 0],
-                                       [1, 1, 1, 1, 0, 0, 0, 0, 0],
-                                       [1, 1, 1, 1, 0, 0, 0, 0, 0]])
-        self.timestep = None
+        self.action_space_dim = (2 * BOARD_SIZE + 1) ** 4
+        self.observation_space_dim = 2 * (2 * BOARD_SIZE + 1)
+        self.action_spaces = {agent: Discrete(self.action_space_dim) for agent in self.possible_agents}
+        self.observation_spaces = {
+            agent: Dict({
+                "observation": MultiDiscrete([self.observation_space_dim] * 3),
+                "action_mask": MultiDiscrete([self.observation_space_dim] * 3)
+            })
+            for agent in self.possible_agents
+        }
+
+        self.render_mode = render_mode
 
     def reset(self, seed=None, options=None):
+        self.agents = self.possible_agents[:]
+        self.rewards = {agent: 0 for agent in self.agents}
+        self._cumulative_rewards = {agent: 0 for agent in self.agents}
+        self.terminations = {agent: False for agent in self.agents}
+        self.truncations = {agent: False for agent in self.agents}
+        self.infos = {agent: {} for agent in self.agents}
 
-        self.players = copy(self.possible_players)
-        self.timestep = 0
-        self.board = self.starting_board
+        self.move = 0
 
-        observations = {
-            player: self.board for player in self.players
-        }
+        self._agent_selector = agent_selector(self.agents)
+        self.agent_selection = self._agent_selector.next()
 
-        infos = {player: {} for player in self.players}
+    def step(self, action):
+        agent = self.agent_selection
 
-        return observations, infos
+        if self.terminations[agent] or self.truncations[agent]:
+            self._was_dead_step(action)
+            return
 
-    def step(self, actions):
-        """"
-           0
-        1     2
-           3
-        """
-        self.board[:, :, 2] = self.board[:, :, 1]
-        self.board[:, :, 1] = self.board[:, :, 0]
+        self._cumulative_rewards[agent] = 0
 
-        player1_action = actions["player1"]
-        player2_action = actions["palyer2"]
-
-        player1_pawn_x = player1_action // 100
-        player1_pawn_y = player1_action // 10 % 10
-        player1_pawn_direction = player1_action % 10
-
-        self.board[player1_pawn_x, player1_pawn_y, 0] = 0
-        if player1_pawn_direction == 0: self.board[player1_pawn_x, player1_pawn_y + 1, 0] = 1
-        if player1_pawn_direction == 1: self.board[player1_pawn_x - 1, player1_pawn_y, 0] = 1
-        if player1_pawn_direction == 2: self.board[player1_pawn_x + 1, player1_pawn_y, 0] = 1
-        if player1_pawn_direction == 3: self.board[player1_pawn_x, player1_pawn_y - 1, 0] = 1
-
-        player2_pawn_x = player2_action // 100
-        player2_pawn_y = player2_action // 10 % 10
-        player2_pawn_direction = player2_action % 10
-
-        self.board[player2_pawn_x, player2_pawn_y, 0] = 0
-        if player2_pawn_direction == 0: self.board[player2_pawn_x, player2_pawn_y + 1, 0] = 1
-        if player2_pawn_direction == 1: self.board[player2_pawn_x - 1, player2_pawn_y, 0] = 1
-        if player2_pawn_direction == 2: self.board[player2_pawn_x + 1, player2_pawn_y, 0] = 1
-        if player2_pawn_direction == 3: self.board[player2_pawn_x, player2_pawn_y - 1, 0] = 1
-
-        terminations = {player: False for player in self.players}
-        rewards = {player: 0 for player in self.players}
-
-        if check_winner(self.board[:, :, 0] == 1):
-            rewards = {"player1": 1, "palyer2": -1}
-            terminations = {player: True for player in self.players}
-        elif check_winner(self.board[:, :, 0] == 2):
-            rewards = {"player1": -1, "palyer2": 1}
-            terminations = {player: True for player in self.players}
-
-        truncations = {player: False for player in self.players}
-        if self.timestep > 200:
-            rewards = {player: 0 for player in self.players}
-            truncations = {player: True for player in self.players}
-        self.timestep += 1
-
-        observations = {
-            player: self.board for player in self.players
-        }
-
-        infos = {player: {} for player in self.players}
-
-        if any(terminations.values()) or all(truncations.values()):
-            self.players = []
-
-        return observations, rewards, terminations, truncations, infos
+        self.state[agent] = action
 
     def render(self):
         print(f"{self.board} \n")
@@ -110,4 +71,4 @@ class ChineseCheckersEnv(ParallelEnv):
         return MultiDiscrete([BOARD_SIZE, BOARD_SIZE, BOARD_HIST] * 3)
 
     def action_space(self, agent):
-        return Discrete(999)
+        return MultiDiscrete([BOARD_SIZE, BOARD_SIZE, 4])
