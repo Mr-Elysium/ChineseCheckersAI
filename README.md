@@ -6,4 +6,10 @@ This was a personal project to create an AI that can play one of my favourite ga
 
 ### Technical Information
 
-For simplicity, I reduced the game to a two-player version. The game mechanics were written by me and the environment was built using the PettingZoo Python library. The training code adapted from the AgileRL website and modified to suit the game's needs. An example of a game board is given below:
+For simplicity, I reduced the game to a two-player version. The game mechanics were written by me and the environment was built using the PettingZoo Python library. The training code was adapted from the AgileRL website and modified to suit the game's needs. An example of a game board is given below:
+
+<img src="chinesecheckers/images/example_board.PNG" alt="example board" width="512"/>
+
+### Results
+
+As it stands chinese checkers turned out to be quite a heavy game with many different possible actions and my personal computer was not quite powerful enough to create a strong model that challenged me. Nevertheless, the model understands the game and can (eventually) beat a very weak player.
