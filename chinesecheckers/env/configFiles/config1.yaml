@@ -1,0 +1,20 @@
+# Connect Four Lesson 1
+# Train against random agent: 'random', weak opponent: 'weak', strong opponent: 'strong', or use self-play: 'self'
+opponent: random
+opponent_pool_size: 6      # Size of opponent pool for self-play
+opponent_upgrade: 6000      # Epoch frequency to update opponent pool
+eval_opponent: random      # 'random', 'weak' or 'strong'
+pretrained_path:       # Path to pretrained model weights
+save_path: models/trained_agent_v0.1.pt  # Path to save trained model
+max_train_episodes: 100000  # Maximum number of training episodes in environment
+
+## Game specific:
+buffer_warm_up: false  # Fill replay buffer with random experiences
+warm_up_opponent: random  # Difficulty level of warm up experiences
+agent_warm_up: 0  # Number of epochs to warm up agent by training on random experiences
+rewards:  # Rewards for different outcomes
+    win: 100
+    lose: -100
+    play_continues: 0
+    home_jump: 5
+    forward_jump: 0.05

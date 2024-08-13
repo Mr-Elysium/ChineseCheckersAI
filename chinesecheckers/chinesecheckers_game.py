@@ -174,12 +174,13 @@ class ChineseCheckers:
             self.winner[player] = True
             self._game_over = True
 
+        return 1
+
     def is_move_legal(self, move: Move, player: int):
         self.find_legal_moves(player)
         return move in self._legal_moves
 
     def _set_coordinate(self, pos: Position, value: int):
-        print(value, pos)
         self.board[pos.x][pos.y] = value
 
     def _get_coordinate(self, pos: Position):

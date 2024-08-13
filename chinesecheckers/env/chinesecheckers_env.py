@@ -1,58 +1,61 @@
-
-from copy import copy
-
-from pettingzoo.utils.env import AgentID, ObsType
-
-from chinesecheckers_utils import action_to_move, get_legal_move_mask
-from chinesecheckers_game import ChineseCheckers, Direction, Move, Position
+from chinesecheckers.chinesecheckers_utils import action_to_move, get_legal_move_mask
+from chinesecheckers.chinesecheckers_game import ChineseCheckers
 
 import numpy as np
-from gymnasium.spaces import Discrete, MultiDiscrete, Dict
+from gymnasium.spaces import Discrete, Dict, Box
 from pettingzoo import AECEnv
-from pettingzoo.utils import agent_selector, wrappers
+from pettingzoo.utils import agent_selector
 
 import matplotlib.pyplot as plt
 
 NUM_PINS = 10
-BOARD_SIZE = int(np.floor(np.sqrt(NUM_PINS * 2)))
+TRIANGLE_SIZE = int(np.floor(np.sqrt(NUM_PINS * 2)))
+BOARD_SIZE = 2 * TRIANGLE_SIZE + 1
 BOARD_HIST = 3
 MAX_MOVES = 1000
 NUM_PLAYERS = 2
 
+WIN_REWARD = 100
+LOSE_REWARD = -100
+HOME_JUMP_REWARD = 5
+FORWARD_JUMP_REWARD = 0.05
+INVALID_MOVE_REWARD = -1000
+
 class ChineseCheckersEnv(AECEnv):
     metadata = {
         "render_modes": ["rgb_array", "human"],
-        "name": "chinese_checkers_environment",
+        "name": "chinese_checkers_2v2",
     }
 
     def __init__(self, render_mode: str = "rgb_array"):
+        super().__init__()
         self.max_moves = MAX_MOVES
 
-        self.agents = [f"players_{i}" for i in range(NUM_PLAYERS)]
+        self.agents = ["player_0", "player_1"]
         self.possible_agents = self.agents[:]
         self.agent_name_mapping = dict(
             zip(self.possible_agents, list(range(len(self.possible_agents))))
         )
 
-        self.move = 0
+        self.move_iter = 0
 
-        self.action_space_dim = (2 * BOARD_SIZE + 1) ** 4
-        self.observation_space_dim = ((2 * BOARD_SIZE + 1) ** 2) * 2
-        self.action_spaces = {agent: Discrete(self.action_space_dim) for agent in self.possible_agents}
+        self.action_space_size = BOARD_SIZE ** 4
+        self.action_spaces = {agent: Discrete(self.action_space_size) for agent in self.agents}
+
+        self.observation_space_shape = (BOARD_SIZE, BOARD_SIZE, 2)
+
         self.observation_spaces = {
             agent: Dict({
-                "observation": Discrete(self.observation_space_dim),
-                "action_mask": Discrete(self.action_space_dim)
+                "observation": Box(shape=self.observation_space_shape, dtype=np.int8, low=0, high=1),
+                "action_mask": Box(shape=(self.action_space_size,), dtype=np.int8, low=0, high=1)
             })
             for agent in self.possible_agents
         }
 
-        self.agent_selection = None
-
         self.window_size = 1000
         self.render_mode = render_mode
 
-        self.game = ChineseCheckers(10, render_mode=render_mode)
+        self.game = ChineseCheckers(NUM_PINS, render_mode=render_mode)
 
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents[:]
@@ -63,11 +66,12 @@ class ChineseCheckersEnv(AECEnv):
         self.infos = {agent: {} for agent in self.agents}
 
         self.game.init_game()
-        self.move = 0
+        self.move_iter = 0
         self.winner = None
 
         self._agent_selector = agent_selector(self.agents)
-        self.agent_selection = self._agent_selector.next()
+
+        self.agent_selection = self._agent_selector.reset()
 
     def step(self, action):
         if self.terminations[self.agent_selection] or self.truncations[self.agent_selection]:
@@ -82,35 +86,35 @@ class ChineseCheckersEnv(AECEnv):
         move = action_to_move(action, BOARD_SIZE)
         move_result = self.game.move(player, move)
 
+        next_agent = self._agent_selector.next()
+
         if self.game.did_player_win(player):
-            self.terminations = {
-                agent: self.game.is_game_over()
-            }
-            for a in self.agents:
-                self.rewards[a] = 10 if a == agent else -1
+            self.terminations = {a: self.game.is_game_over() for a in self.agents}
+            self.rewards[agent] += WIN_REWARD
+            self.rewards[next_agent] += LOSE_REWARD
             self.winner = agent
-        elif move is None:
-            self.rewards[agent] = -1000
+        elif move_result is None:
+            self.rewards[agent] = INVALID_MOVE_REWARD
         else:
             if move.move_to in self.game.get_home_coordinates(player):
-                self.rewards[agent] += 0.1
+                self.rewards[agent] += HOME_JUMP_REWARD
+            if player == 0:
+                self.rewards[agent] += max(((move.move_to.x + move.move_to.y) - (move.move_from.x + move.move_from.y)) * FORWARD_JUMP_REWARD, 0)
+            elif player == 1:
+                self.rewards[agent] += max(((move.move_from.x + move.move_from.y) - (move.move_to.x + move.move_to.y)) * FORWARD_JUMP_REWARD, 0)
 
         self._accumulate_rewards()
-        self._clear_rewards()
 
         if self._agent_selector.is_last():
             self.truncations = {
-                agent: self.move >= self.max_moves for agent in self.agents
+                agent: self.move_iter >= self.max_moves for agent in self.agents
             }
 
-        self.move += 1
-        self.agent_selection = self._agent_selector.next()
+        self.move_iter += 1
+        self.agent_selection = next_agent
 
     def render(self):
         return self.game.render()
-
-    def observation_space(self, agent):
-        return self.observation_spaces[agent]
 
     def observe(self, agent):
         player = self.agent_name_mapping[agent]
@@ -129,13 +133,15 @@ class ChineseCheckersEnv(AECEnv):
 
         observation = np.stack([pins_to_board(player_pins), pins_to_board(opponent_pins)])
 
-        observation = observation.flatten()
+        action_mask = get_legal_move_mask(self.game, player, BOARD_SIZE)
 
         return {
             "observation": observation,
-            "action_mask": get_legal_move_mask(self.game, player, BOARD_SIZE)
+            "action_mask": action_mask
         }
 
+    def observation_space(self, agent):
+        return self.observation_spaces[agent]
 
     def action_space(self, agent):
         return self.action_spaces[agent]
