@@ -12,15 +12,16 @@ from agilerl.components.replay_buffer import ReplayBuffer
 from agilerl.hpo.mutation import Mutations
 from agilerl.hpo.tournament import TournamentSelection
 from agilerl.utils.utils import create_population
-from tqdm import tqdm, trange
+from tqdm import trange
 
 from env_wrapper import WrapperEnv
 from opponent import Opponent
 from chinesecheckers_env import ChineseCheckersEnv
-from chinesecheckers.chinesecheckers_utils import action_to_move, mirror_move
+from chinesecheckers.chinesecheckers_utils import action_to_move, mirror_action
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("===== Chinese Checkers 2v2 Reinforcement Learning =====")
+device = torch.device("cpu")
+print("===== Chinese Checkers 1v1 Reinforcement Learning =====")
 
 config_number = 1
 
@@ -255,7 +256,7 @@ for idx_epi in pbar:
                     reward = env.reward(done=True, player=0, move=action_to_move(p0_action))
                     memory.save_to_memory_vect_envs(
                         np.concatenate((p0_state, p1_state, p0_state_flipped, p1_state_flipped)),
-                        [action_to_move(p0_action), action_to_move(p1_action), mirror_move(action_to_move(p0_action)), mirror_move(action_to_move(p1_action))],
+                        [p0_action, p1_action, mirror_action(p0_action), mirror_action(p1_action)],
                         [
                             reward,
                             LESSON["rewards"]["lose"],
@@ -277,7 +278,7 @@ for idx_epi in pbar:
                         reward = env.reward(done=False, player=1, move=action_to_move(p1_action))
                         memory.save_to_memory_vect_envs(
                             np.concatenate((p1_state, p1_state_flipped)),
-                            [action_to_move(p1_action), mirror_move(action_to_move(p1_action))],
+                            [p1_action, mirror_action(p1_action)],
                             [reward, reward],
                             np.concatenate((p1_next_state, p1_next_state_flipped)),
                             [done, done],
@@ -315,7 +316,7 @@ for idx_epi in pbar:
                         reward = env.reward(done=True, player=1, move=action_to_move(p1_action))
                         memory.save_to_memory_vect_envs(
                             np.concatenate((p0_state, p1_state, p0_state_flipped, p1_state_flipped)),
-                            [action_to_move(p0_action), action_to_move(p1_action), mirror_move(action_to_move(p0_action)), mirror_move(action_to_move(p1_action))],
+                            [p0_action, p1_action, mirror_action(p0_action), mirror_action(p1_action)],
                             [
                                 LESSON["rewards"]["lose"],
                                 reward,
@@ -337,7 +338,7 @@ for idx_epi in pbar:
                         reward = env.reward(done=False, player=0, move=action_to_move(p0_action))
                         memory.save_to_memory_vect_envs(
                             np.concatenate((p0_state, p0_state_flipped)),
-                            [action_to_move(p0_action), mirror_move(action_to_move(p0_action))],
+                            [p0_action, mirror_action(p0_action)],
                             [reward],
                             np.concatenate((p0_next_state, p0_next_state_flipped)),
                             [done, done],
@@ -345,12 +346,10 @@ for idx_epi in pbar:
 
                 # Learn according to learning frequency
                 if (memory.counter % agent.learn_step == 0) and (len(memory) >= agent.batch_size):
-                    pass
                     # Sample replay buffer
                     # Learn according to agent's RL algorithm
-                    #experiences = memory.sample(agent.batch_size)
-                    #agent.learn(experiences)
-                # TODO: uncomment. Problem with underlying library
+                    experiences = memory.sample(agent.batch_size)
+                    agent.learn(experiences)
 
                 # Stop episode if any agents have terminated
                 if done or truncation:

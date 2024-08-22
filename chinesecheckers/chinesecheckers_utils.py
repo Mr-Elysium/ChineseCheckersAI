@@ -23,3 +23,6 @@ def mirror_pos(position: Position, board_size: int = 9):
 
 def mirror_move(move: Move):
     return Move(mirror_pos(move.move_from), mirror_pos(move.move_to))
+
+def mirror_action(action: int):
+    return move_to_action(mirror_move(action_to_move(action)))
